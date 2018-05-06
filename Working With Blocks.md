@@ -235,6 +235,123 @@ Blocks 使这变得更容易，然而，因为你能在你初始化任务时定�
 
 **使用类型定义简化 Block 语法**
 
+如果你需要用相同的签名定义不止一个 block，你可能想要为那个签名定义你自己的类型。
+
+举个例子，你可以为一个不携带参数或返回值的简单 block 定义一种类型，像这样：
+
+```objective-c
+typedef void (^XYZSimpleBlock)(void);
+```
+
+你然后能为方法参数或在创建 block 变量时使用你的自定义类型：
+
+```objective-c
+XYZSimple anotherBlock = ^{
+    ...
+};
+```
+
+```objective-c
+- (void)beginFetchWithCallbackBlock:(XYZSimpleBlock)callback {
+    ...
+    callbackBlock();
+};
+```
+
+自定义类型定义在处理返回 blocks 或携带其他 blocks 作为参数时特别有用。考虑以下例子：
+
+```objective-c
+void (^(^complexBlock)(void (^)(void))(void)) = ^(void (^aBlock)(void)) {
+    ...
+    return ^{
+        ...
+    };
+};
+```
+
+complexBlock 变量引用一个携带另一个 block 作为一个参数（aBlock）和返回另一个 block 的 block。
+
+重写代码使用类型定义使这变得更加可读：
+
+```objective-c
+XYZSimpleBlock (^betterBlock)(XYZSimpleBlock) = ^(XYZSimpleBlock aBlock) {
+    ...
+    return ^{
+    	...    
+    };
+};
+```
+
+**对象使用属性跟踪 Blocks**
+
+定义属性跟踪 block 的语法类似 block 变量：
+
+```objective-c
+@interface XYZObject : NSObject
+@property (copy) void (^blockProperty)(void);
+@end
+```
+
+> 注意：你应该指定 copy 作为属性特性，因为 block 需要被复制来在原始范围外跟踪它捕获的状态。在使用 Automatic Reference Counting 时这不是你需要关心的事情，因为它会自动地发生，但它对于属性特性显示组合的行为是最佳实践。更多信息，查看 Blocks Programming To
+
+block 属性像任何其他 block 变量一样设置或调用：
+
+```objective-c
+self.blockProperty = ^{
+    ...
+};
+self.blockProperty();
+```
+
+使用类型定义作为 block 属性声明也是可能的，像这样：
+
+```objective-c
+typedef void (^XYZSimpleBlock)(void);
+
+@interface XYZObject : NSObject
+@propery (copy) XYZSimpleBlock blockProperty;
+@end
+```
+
+**在捕获 self 时避免强引用循环**
+
+如果你需要在 block 里捕获 self，例如在定义一个回调 block 时，考虑内存管理意义很重要。
+
+Blocks 保留任何捕获的对象的强引用，包括 self，意味着很容易造成强引用循环，例如，一个为一个捕获 self 的 block 保留一个 copy 属性的对象：
+
+```objective-c
+@interface XYZBlockKeeper : NSObject
+@property (copy) void (^block)(void);
+@end
+```
+
+```objective-c
+@implementation XYZBlockKeeper
+- (void)configureBlock {
+    self.block = ^{
+        [self doSomething]; // capturing a strong reference to self
+							// creates a strong reference cycle
+    };
+}
+...
+@end
+```
+
+对于像这样的简单例子编译器会警告你，但是更复杂的例子可能在对象之间涉及多个强引用来创建循环，使诊断变得更复杂。
+
+为了避免这个问题，捕获 self 的弱引用是最佳实践，像这样：
+
+```objective-c
+- (void)configureBlock {
+    XYZBlockKeeper * __weak weakSelf = self;
+    self.block = ^{
+        [weakSelf doSomething]; // capture the weak reference to 								// avoid the reference cycle
+    };
+}
+```
+
+通过捕获指向 self 的弱指针，block 不会保留 XYZBlockKeeper 对象的强引用关系。如果那个对象在 block 被调用之前被释放，weakSelf 指针仅会被设置为 nil。
+
 ###### Blocks 能简化枚举
 
 ###### Blocks 能简化并发任务
